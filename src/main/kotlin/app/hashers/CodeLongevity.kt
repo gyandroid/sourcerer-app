@@ -138,23 +138,21 @@ class CodeLineAges : Serializable {
 /**
  * Used to compute age of code lines in the repo.
  */
-class CodeLongevity(private val serverRepo: Repo,
-                    private val emails: HashSet<String>,
-                    git: Git,
-                    private val onError: (Throwable) -> Unit) {
+class CodeLongevity(
+    private val serverRepo: Repo,
+    private val emails: HashSet<String>,
+    private val git: Git,
+    private val onError: (Throwable) -> Unit,
+    private val diffObservable:
+        Observable<JgitPair> = CommitCrawler.getJGitObservable(git)) {
+
     val repo: Repository = git.repository
     val revWalk = RevWalk(repo)
     val head: RevCommit =
         try { revWalk.parseCommit(CommitCrawler.getDefaultBranchHead(git)) }
         catch(e: Exception) { throw Exception("No branch") }
 
-    val df = DiffFormatter(DisabledOutputStream.INSTANCE)
     val dataPath = FileHelper.getPath(serverRepo.rehash, "longevity")
-
-    init {
-        df.setRepository(repo)
-        df.setDetectRenames(true)
-    }
 
     /**
      * Update code line age statistics on the server.
@@ -328,7 +326,9 @@ class CodeLongevity(private val serverRepo: Repo,
             }
         }
 
-        getDiffsObservable(tail).blockingSubscribe( { (commit, diffs) ->
+        diffObservable
+        .takeWhile { (commit, _) -> commit != tail }
+        .subscribe( { (commit, diffs) ->
             // A step back in commits history. Update the files map according
             // to the diff. Traverse the diffs backwards to handle double
             // renames properly.
