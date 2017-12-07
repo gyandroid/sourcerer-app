@@ -282,4 +282,41 @@ class FactHasherTest : Spek({
             testRepo.destroy()
         }
     }
+
+    given("commits for naming convention facts") {
+        val testRepo = TestRepo(repoPath + "file-facts")
+        val emails = hashSetOf(authorEmail1)
+        val mockApi = MockApi(mockRepo = repo)
+        val facts = mockApi.receivedFacts
+
+        afterEachTest {
+            facts.clear()
+        }
+
+        val lines = listOf("camelCase1", "camelCase2", "snake_case", "fn()")
+
+        it("sends facts") {
+            for (i in 0..lines.size - 1) {
+                val line = lines[i]
+                val fileName = "file$i.txt"
+                testRepo.createFile(fileName, listOf(line))
+                testRepo.commit(message = "$line in $fileName", author = author1)
+            }
+
+            val errors = mutableListOf<Throwable>()
+            val observable = CommitCrawler.getObservable(testRepo.git, repo)
+            val rehashes = (0..lines.size - 1).map { "r$it" }
+
+            FactHasher(repo, mockApi, rehashes, emails)
+                    .updateFromObservable(observable, { e -> errors.add(e) })
+            assertEquals(0, errors.size)
+
+            assertFactInt(FactCodes.VARIABLE_NAMING, 0, 1, author1, facts)
+            assertFactInt(FactCodes.VARIABLE_NAMING, 1, 2, author1, facts)
+        }
+
+        afterGroup {
+            testRepo.destroy()
+        }
+    }
 })
